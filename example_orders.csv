@@ -1,0 +1,9 @@
+order_id,customer_name,quantity,email
+ORD001,John Smith,4,john@example.com
+ORD002,Sarah Johnson,2,sarah@example.com
+ORD003,Mike Brown,3,mike@example.com
+ORD004,Emily Davis,1,emily@example.com
+ORD005,David Wilson,5,david@example.com
+ORD006,Lisa Anderson,2,lisa@example.com
+ORD007,Tom Martinez,1,tom@example.com
+ORD008,Anna Taylor,3,anna@example.com

@@ -1,0 +1,608 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seating Assignment System</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <style>
+        .upload-box {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s;
+        }
+        .upload-box:hover {
+            border-color: #4299e1;
+            background-color: #ebf8ff;
+        }
+        .upload-box.dragover {
+            border-color: #3182ce;
+            background-color: #bee3f8;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-6xl">
+        <h1 class="text-4xl font-bold text-gray-800 mb-2">Seating Assignment System</h1>
+        <p class="text-gray-600 mb-8">Best-available algorithm with orphan seat prevention</p>
+
+        <!-- Step 1: Upload CSV -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 1: Upload Orders CSV</h2>
+            <div class="upload-box rounded-lg p-8 text-center cursor-pointer" id="csvUploadBox">
+                <input type="file" id="csvFile" accept=".csv" class="hidden">
+                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <p class="mt-2 text-sm text-gray-600">Click to upload or drag and drop</p>
+                <p class="text-xs text-gray-500">CSV file with orders</p>
+            </div>
+            <div id="csvPreview" class="mt-4 hidden">
+                <p class="text-sm font-medium text-gray-700 mb-2">File loaded: <span id="csvFileName" class="text-blue-600"></span></p>
+                <p class="text-sm text-gray-600 mb-3">Select the quantity column by clicking the radio button above it:</p>
+                <div class="overflow-x-auto border border-gray-200 rounded-lg">
+                    <table id="csvPreviewTable" class="min-w-full divide-y divide-gray-200 text-sm">
+                        <!-- Table will be populated by JavaScript -->
+                    </table>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Showing first 5 rows</p>
+            </div>
+        </div>
+
+        <!-- Step 2: Upload Seating Plan -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 2: Seating Plan (JSON)</h2>
+            <div class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Upload JSON file or paste below:</label>
+                <input type="file" id="jsonFile" accept=".json" class="mb-2 block w-full text-sm text-gray-500
+                    file:mr-4 file:py-2 file:px-4
+                    file:rounded-md file:border-0
+                    file:text-sm file:font-semibold
+                    file:bg-blue-50 file:text-blue-700
+                    hover:file:bg-blue-100">
+            </div>
+            <textarea id="seatingPlan" rows="8"
+                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                placeholder='[["A-1--2---1", "A-1--2---2", "A-1--2---3"], ["B-1--3---1", "B-1--3---2"]]'></textarea>
+            <p class="text-xs text-gray-500 mt-2">Format: Array of arrays. Each inner array = consecutive seats. Seat format: "ZONE-SECTION--ROW---SEAT"</p>
+            <div id="seatingStats" class="mt-3 hidden">
+                <p class="text-sm text-green-600 font-medium">✓ Valid JSON - <span id="totalSeats"></span> total seats in <span id="totalRows"></span> rows</p>
+            </div>
+            <div id="seatingError" class="mt-3 hidden">
+                <p class="text-sm text-red-600 font-medium">✗ Error: <span id="seatingErrorMsg"></span></p>
+            </div>
+            <div id="seatingPreview" class="mt-3 hidden">
+                <p class="text-sm font-medium text-gray-700 mb-2">Preview with duplicates highlighted:</p>
+                <div id="seatingPreviewContent" class="p-3 bg-gray-50 rounded border border-gray-200 font-mono text-xs overflow-auto max-h-64"></div>
+            </div>
+        </div>
+
+        <!-- Process Button -->
+        <div class="text-center mb-6">
+            <button id="processBtn" disabled
+                class="px-8 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 disabled:bg-gray-300 disabled:cursor-not-allowed transition duration-200">
+                Process Seat Assignments
+            </button>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="bg-white rounded-lg shadow-md p-6 hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Results</h2>
+            <div id="summary" class="mb-4 p-4 bg-blue-50 rounded-lg"></div>
+            <div class="flex gap-3 flex-wrap">
+                <button id="downloadBtn"
+                    class="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-200">
+                    Download Processed CSV
+                </button>
+                <button id="downloadRemainingBtn"
+                    class="px-6 py-2 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-200">
+                    Download Remaining Seats (JSON)
+                </button>
+            </div>
+            <div id="errorLog" class="mt-4 hidden">
+                <h3 class="font-semibold text-red-600 mb-2">Unassigned Orders:</h3>
+                <div id="errorList" class="text-sm text-gray-700"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-50 text-gray-400 py-6 mt-12">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-sm">Made by HY Huang while travelling in 🏛️, 🇬🇷</p>
+        </div>
+    </footer>
+
+    <script>
+        // Global variables
+        let csvData = null;
+        let csvHeaders = [];
+        let seatingPlanData = null;
+        let quantityColumnName = null;
+        let remainingSeats = null;
+
+        // CSV Upload handling
+        const csvUploadBox = document.getElementById('csvUploadBox');
+        const csvFileInput = document.getElementById('csvFile');
+        const csvPreview = document.getElementById('csvPreview');
+        const csvFileName = document.getElementById('csvFileName');
+        const csvPreviewTable = document.getElementById('csvPreviewTable');
+
+        csvUploadBox.addEventListener('click', () => csvFileInput.click());
+
+        csvUploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            csvUploadBox.classList.add('dragover');
+        });
+
+        csvUploadBox.addEventListener('dragleave', () => {
+            csvUploadBox.classList.remove('dragover');
+        });
+
+        csvUploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            csvUploadBox.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file && file.name.endsWith('.csv')) {
+                handleCSVFile(file);
+            }
+        });
+
+        csvFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleCSVFile(file);
+        });
+
+        function handleCSVFile(file) {
+            Papa.parse(file, {
+                header: true,
+                skipEmptyLines: true,
+                complete: function(results) {
+                    csvData = results.data;
+                    csvHeaders = results.meta.fields;
+                    csvFileName.textContent = file.name;
+                    csvPreview.classList.remove('hidden');
+
+                    // Build preview table
+                    renderCSVPreviewTable();
+
+                    checkReadyToProcess();
+                }
+            });
+        }
+
+        function renderCSVPreviewTable() {
+            let tableHTML = '<thead class="bg-gray-50"><tr>';
+
+            // Radio button row
+            tableHTML += '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Select</th>';
+            csvHeaders.forEach((header, index) => {
+                tableHTML += `
+                    <th class="px-3 py-2 text-center text-xs font-medium text-gray-500 uppercase tracking-wider">
+                        <input type="radio" name="quantityColumn" value="${header}" id="col_${index}"
+                            class="w-4 h-4 text-blue-600 cursor-pointer" onchange="handleColumnSelection('${header}')">
+                    </th>
+                `;
+            });
+            tableHTML += '</tr><tr>';
+
+            // Column headers row
+            tableHTML += '<th class="px-3 py-2 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">#</th>';
+            csvHeaders.forEach(header => {
+                tableHTML += `
+                    <th class="px-3 py-2 text-left text-xs font-medium text-gray-700 uppercase tracking-wider whitespace-nowrap">
+                        ${header}
+                    </th>
+                `;
+            });
+            tableHTML += '</tr></thead>';
+
+            // Data rows (first 5)
+            tableHTML += '<tbody class="bg-white divide-y divide-gray-200">';
+            const rowsToShow = Math.min(5, csvData.length);
+            for (let i = 0; i < rowsToShow; i++) {
+                tableHTML += `<tr class="hover:bg-gray-50">`;
+                tableHTML += `<td class="px-3 py-2 whitespace-nowrap text-sm text-gray-500">${i + 1}</td>`;
+
+                csvHeaders.forEach(header => {
+                    const value = csvData[i][header] || '';
+                    tableHTML += `<td class="px-3 py-2 whitespace-nowrap text-sm text-gray-900">${value}</td>`;
+                });
+
+                tableHTML += '</tr>';
+            }
+            tableHTML += '</tbody>';
+
+            csvPreviewTable.innerHTML = tableHTML;
+        }
+
+        // Global function to handle column selection
+        window.handleColumnSelection = function(columnName) {
+            quantityColumnName = columnName;
+            checkReadyToProcess();
+        };
+
+        // JSON Upload handling
+        const jsonFileInput = document.getElementById('jsonFile');
+        const seatingPlanTextarea = document.getElementById('seatingPlan');
+        const seatingStats = document.getElementById('seatingStats');
+
+        jsonFileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    seatingPlanTextarea.value = e.target.result;
+                    validateSeatingPlan();
+                };
+                reader.readAsText(file);
+            }
+        });
+
+        seatingPlanTextarea.addEventListener('input', validateSeatingPlan);
+
+        function validateSeatingPlan() {
+            const seatingError = document.getElementById('seatingError');
+            const seatingErrorMsg = document.getElementById('seatingErrorMsg');
+            const seatingPreview = document.getElementById('seatingPreview');
+            const seatingPreviewContent = document.getElementById('seatingPreviewContent');
+
+            try {
+                const json = JSON.parse(seatingPlanTextarea.value);
+                if (Array.isArray(json) && json.every(row => Array.isArray(row))) {
+                    // Check for duplicate seats
+                    const seatSet = new Set();
+                    const duplicateSet = new Set();
+
+                    for (let rowIndex = 0; rowIndex < json.length; rowIndex++) {
+                        for (let seatIndex = 0; seatIndex < json[rowIndex].length; seatIndex++) {
+                            const seat = json[rowIndex][seatIndex];
+                            if (seatSet.has(seat)) {
+                                duplicateSet.add(seat);
+                            } else {
+                                seatSet.add(seat);
+                            }
+                        }
+                    }
+
+                    if (duplicateSet.size > 0) {
+                        seatingPlanData = null;
+                        seatingStats.classList.add('hidden');
+                        seatingError.classList.remove('hidden');
+                        const duplicatesArray = Array.from(duplicateSet);
+                        seatingErrorMsg.textContent = `Duplicate seats found: ${duplicatesArray.join(', ')}`;
+
+                        // Show preview with highlighted duplicates
+                        seatingPreview.classList.remove('hidden');
+                        renderSeatingPlanWithHighlights(json, duplicateSet, seatingPreviewContent);
+
+                        checkReadyToProcess();
+                        return;
+                    }
+
+                    seatingPlanData = json;
+                    const totalSeats = json.reduce((sum, row) => sum + row.length, 0);
+                    const totalRows = json.length;
+
+                    document.getElementById('totalSeats').textContent = totalSeats;
+                    document.getElementById('totalRows').textContent = totalRows;
+                    seatingStats.classList.remove('hidden');
+                    seatingError.classList.add('hidden');
+                    seatingPreview.classList.add('hidden');
+                    checkReadyToProcess();
+                } else {
+                    seatingStats.classList.add('hidden');
+                    seatingError.classList.add('hidden');
+                    seatingPreview.classList.add('hidden');
+                    seatingPlanData = null;
+                }
+            } catch (e) {
+                seatingStats.classList.add('hidden');
+                seatingError.classList.add('hidden');
+                seatingPreview.classList.add('hidden');
+                seatingPlanData = null;
+            }
+        }
+
+        function renderSeatingPlanWithHighlights(json, duplicateSet, container) {
+            let html = '<div class="whitespace-pre-wrap break-all">[<br>';
+
+            json.forEach((row, rowIndex) => {
+                html += '  [';
+                row.forEach((seat, seatIndex) => {
+                    const isDuplicate = duplicateSet.has(seat);
+                    const seatHtml = isDuplicate
+                        ? `<span class="bg-red-200 px-1 rounded" title="Duplicate seat">"${seat}"</span>`
+                        : `"${seat}"`;
+                    html += seatHtml;
+                    if (seatIndex < row.length - 1) html += ', ';
+                });
+                html += ']';
+                if (rowIndex < json.length - 1) html += ',';
+                html += '<br>';
+            });
+
+            html += ']</div>';
+            container.innerHTML = html;
+        }
+
+        function checkReadyToProcess() {
+            const processBtn = document.getElementById('processBtn');
+            if (csvData && quantityColumnName && seatingPlanData) {
+                processBtn.disabled = false;
+            } else {
+                processBtn.disabled = true;
+            }
+        }
+
+        // Seat parsing function
+        function parseSeat(seatString) {
+            const parts = seatString.split('---');
+            if (parts.length !== 2) return null;
+
+            const seat = parts[1];
+            const remaining = parts[0];
+
+            const rowParts = remaining.split('--');
+            if (rowParts.length !== 2) return null;
+
+            const row = rowParts[1];
+            const sectionParts = rowParts[0].split('-');
+
+            if (sectionParts.length !== 2) return null;
+
+            const zone = sectionParts[0];
+            const section = sectionParts[1];
+
+            return { zone, section, row, seat };
+        }
+
+        // Check if assigning seats would leave orphan
+        function wouldLeaveOrphan(availableSeats, quantity) {
+            const remaining = availableSeats.length - quantity;
+            return remaining === 1;
+        }
+
+        // Process seat assignments
+        document.getElementById('processBtn').addEventListener('click', processAssignments);
+
+        function processAssignments() {
+            // Create deep copy of seating plan to track availability
+            const availableSeats = seatingPlanData.map(row => ({
+                seats: [...row],
+                available: row.map(() => true)
+            }));
+
+            // Prepare orders with quantities
+            const orders = csvData.map((row, index) => ({
+                index,
+                originalData: row,
+                quantity: parseInt(row[quantityColumnName]) || 0,
+                assignedSeats: null
+            }));
+
+            // Sort by quantity descending
+            orders.sort((a, b) => b.quantity - a.quantity);
+
+            // Assign seats
+            let totalAssigned = 0;
+            let totalUnassigned = 0;
+            const unassignedOrders = [];
+
+            orders.forEach(order => {
+                if (order.quantity === 0) return;
+
+                let assigned = false;
+
+                // Try each row
+                for (let rowIndex = 0; rowIndex < availableSeats.length; rowIndex++) {
+                    const row = availableSeats[rowIndex];
+
+                    // Find consecutive available seats
+                    for (let startPos = 0; startPos <= row.available.length - order.quantity; startPos++) {
+                        // Check if we have enough consecutive seats
+                        let consecutive = true;
+                        for (let i = 0; i < order.quantity; i++) {
+                            if (!row.available[startPos + i]) {
+                                consecutive = false;
+                                break;
+                            }
+                        }
+
+                        if (!consecutive) continue;
+
+                        // Count remaining available seats in this row after assignment
+                        let remainingInRow = 0;
+                        for (let i = 0; i < row.available.length; i++) {
+                            if (i >= startPos && i < startPos + order.quantity) continue;
+                            if (row.available[i]) remainingInRow++;
+                        }
+
+                        // Check orphan rule: don't assign if it would leave exactly 1 seat
+                        if (remainingInRow === 1) {
+                            continue; // Skip this position
+                        }
+
+                        // Assign seats
+                        const assignedSeats = [];
+                        for (let i = 0; i < order.quantity; i++) {
+                            assignedSeats.push(row.seats[startPos + i]);
+                            row.available[startPos + i] = false;
+                        }
+
+                        order.assignedSeats = assignedSeats;
+                        assigned = true;
+                        totalAssigned++;
+                        break;
+                    }
+
+                    if (assigned) break;
+                }
+
+                if (!assigned) {
+                    totalUnassigned++;
+                    unassignedOrders.push(order);
+                }
+            });
+
+            // Collect remaining seats
+            const remainingSeatsList = [];
+            availableSeats.forEach(row => {
+                const rowRemaining = [];
+                row.available.forEach((isAvailable, index) => {
+                    if (isAvailable) {
+                        rowRemaining.push(row.seats[index]);
+                    }
+                });
+                if (rowRemaining.length > 0) {
+                    remainingSeatsList.push(rowRemaining);
+                }
+            });
+
+            remainingSeats = remainingSeatsList;
+
+            // Generate output CSV
+            generateOutputCSV(orders, totalAssigned, totalUnassigned, unassignedOrders, remainingSeatsList);
+        }
+
+        function generateOutputCSV(orders, totalAssigned, totalUnassigned, unassignedOrders, remainingSeatsList) {
+            // Find max quantity to determine number of seat columns
+            const maxQuantity = Math.max(...orders.map(o => o.quantity));
+
+            // Sort orders back to original order
+            orders.sort((a, b) => a.index - b.index);
+
+            // Build new headers
+            const newHeaders = [...csvHeaders, 'raw_data'];
+            for (let i = 1; i <= maxQuantity; i++) {
+                newHeaders.push(`zone${i}`, `section${i}`, `row${i}`, `seat${i}`);
+            }
+
+            // Build rows
+            const outputRows = orders.map(order => {
+                const row = { ...order.originalData };
+
+                if (order.assignedSeats) {
+                    row.raw_data = JSON.stringify(order.assignedSeats);
+
+                    order.assignedSeats.forEach((seatString, index) => {
+                        const parsed = parseSeat(seatString);
+                        if (parsed) {
+                            const num = index + 1;
+                            row[`zone${num}`] = parsed.zone;
+                            row[`section${num}`] = parsed.section;
+                            row[`row${num}`] = parsed.row;
+                            row[`seat${num}`] = parsed.seat;
+                        }
+                    });
+
+                    // Fill remaining columns with empty string
+                    for (let i = order.assignedSeats.length + 1; i <= maxQuantity; i++) {
+                        row[`zone${i}`] = '';
+                        row[`section${i}`] = '';
+                        row[`row${i}`] = '';
+                        row[`seat${i}`] = '';
+                    }
+                } else {
+                    row.raw_data = '';
+                    for (let i = 1; i <= maxQuantity; i++) {
+                        row[`zone${i}`] = '';
+                        row[`section${i}`] = '';
+                        row[`row${i}`] = '';
+                        row[`seat${i}`] = '';
+                    }
+                }
+
+                return row;
+            });
+
+            // Convert to CSV
+            const csv = Papa.unparse({
+                fields: newHeaders,
+                data: outputRows
+            });
+
+            // Store for download
+            window.generatedCSV = csv;
+
+            // Show results
+            displayResults(totalAssigned, totalUnassigned, unassignedOrders, orders.length, remainingSeatsList);
+        }
+
+        function displayResults(totalAssigned, totalUnassigned, unassignedOrders, totalOrders, remainingSeatsList) {
+            const results = document.getElementById('results');
+            const summary = document.getElementById('summary');
+            const errorLog = document.getElementById('errorLog');
+            const errorList = document.getElementById('errorList');
+
+            const totalRemainingSeats = remainingSeatsList.reduce((sum, row) => sum + row.length, 0);
+
+            summary.innerHTML = `
+                <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                        <p class="text-sm text-gray-600">Total Orders</p>
+                        <p class="text-2xl font-bold text-gray-800">${totalOrders}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Successfully Assigned</p>
+                        <p class="text-2xl font-bold text-green-600">${totalAssigned}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Unassigned Orders</p>
+                        <p class="text-2xl font-bold text-red-600">${totalUnassigned}</p>
+                    </div>
+                    <div>
+                        <p class="text-sm text-gray-600">Remaining Seats</p>
+                        <p class="text-2xl font-bold text-blue-600">${totalRemainingSeats}</p>
+                    </div>
+                </div>
+            `;
+
+            if (unassignedOrders.length > 0) {
+                errorLog.classList.remove('hidden');
+                errorList.innerHTML = unassignedOrders.map(order => {
+                    const identifier = order.originalData[csvHeaders[0]] || `Row ${order.index + 1}`;
+                    return `<div class="mb-1">• ${identifier} - Quantity: ${order.quantity} (No suitable consecutive seats found without creating orphans)</div>`;
+                }).join('');
+            } else {
+                errorLog.classList.add('hidden');
+            }
+
+            results.classList.remove('hidden');
+            results.scrollIntoView({ behavior: 'smooth', block: 'start' });
+        }
+
+        // Download CSV
+        document.getElementById('downloadBtn').addEventListener('click', () => {
+            const blob = new Blob([window.generatedCSV], { type: 'text/csv' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'seating_assignments.csv';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        });
+
+        // Download Remaining Seats JSON
+        document.getElementById('downloadRemainingBtn').addEventListener('click', () => {
+            if (!remainingSeats) {
+                alert('No remaining seats data available. Please process seat assignments first.');
+                return;
+            }
+
+            const json = JSON.stringify(remainingSeats, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = 'remaining_seats.json';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        });
+    </script>
+</body>
+</html>
