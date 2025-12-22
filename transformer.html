@@ -1,0 +1,824 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Seating Plan Transformer</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.sheetjs.com/xlsx-0.20.1/package/dist/xlsx.full.min.js"></script>
+    <style>
+        .upload-box {
+            border: 2px dashed #cbd5e0;
+            transition: all 0.3s;
+        }
+        .upload-box:hover {
+            border-color: #4299e1;
+            background-color: #ebf8ff;
+        }
+        .upload-box.dragover {
+            border-color: #3182ce;
+            background-color: #bee3f8;
+        }
+        .column-selected-row {
+            background-color: #dbeafe !important;
+            font-weight: 600;
+        }
+        .column-selected-seat {
+            background-color: #d1fae5 !important;
+            font-weight: 600;
+        }
+        .cell-selectable {
+            cursor: pointer;
+            transition: background-color 0.2s;
+            user-select: none;
+        }
+        .cell-selectable:hover {
+            background-color: #f3f4f6;
+        }
+        .cell-selectable:active {
+            cursor: grabbing;
+        }
+        .grid-container {
+            max-height: 400px;
+            overflow: auto;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="container mx-auto px-4 py-8 max-w-7xl">
+        <!-- Header -->
+        <div class="mb-6">
+            <h1 class="text-4xl font-bold text-gray-800 mb-2">Seating Plan Transformer</h1>
+            <p class="text-gray-600">Convert your XLSX/CSV seating plans to JSON format</p>
+            <a href="index.html" class="inline-block mt-2 text-blue-600 hover:text-blue-800 text-sm">
+                ← Back to Seating Assignment
+            </a>
+        </div>
+
+        <!-- Step 1: Upload File -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 1: Upload XLSX/CSV File</h2>
+            <div class="upload-box rounded-lg p-8 text-center cursor-pointer" id="uploadBox">
+                <input type="file" id="fileInput" accept=".xlsx,.xls,.csv" class="hidden">
+                <svg class="mx-auto h-12 w-12 text-gray-400" stroke="currentColor" fill="none" viewBox="0 0 48 48">
+                    <path d="M28 8H12a4 4 0 00-4 4v20m32-12v8m0 0v8a4 4 0 01-4 4H12a4 4 0 01-4-4v-4m32-4l-3.172-3.172a4 4 0 00-5.656 0L28 28M8 32l9.172-9.172a4 4 0 015.656 0L28 28m0 0l4 4m4-24h8m-4-4v8" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <p class="mt-2 text-sm text-gray-600">Click to upload or drag and drop</p>
+                <p class="text-xs text-gray-500">XLSX, XLS, or CSV files</p>
+            </div>
+            <div id="fileInfo" class="mt-4 hidden">
+                <p class="text-sm font-medium text-gray-700">File loaded: <span id="fileName" class="text-blue-600"></span></p>
+                <div id="sheetSelector" class="mt-3 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Select Sheet:</label>
+                    <select id="sheetSelect" class="w-full md:w-64 px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- Step 2: Configure Mapping -->
+        <div id="mappingSection" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 2: Configure Mapping</h2>
+
+            <div class="mb-4 p-4 bg-blue-50 rounded-lg border border-blue-200">
+                <label class="block text-sm font-medium text-gray-700 mb-3">Data Orientation *</label>
+                <div class="flex gap-6">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="orientation" value="row" id="orientationRow" checked
+                            class="w-4 h-4 text-blue-600">
+                        <span class="ml-2 text-sm text-gray-700">
+                            <strong>By Row</strong> - Row IDs in column, seats spread across columns →
+                        </span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="orientation" value="column" id="orientationColumn"
+                            class="w-4 h-4 text-blue-600">
+                        <span class="ml-2 text-sm text-gray-700">
+                            <strong>By Column</strong> - Row IDs in row, seats spread down rows ↓
+                        </span>
+                    </label>
+                </div>
+                <p class="text-xs text-gray-500 mt-2">Choose how your seating data is organized in the spreadsheet</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Zone *</label>
+                    <input type="text" id="zoneInput" placeholder="e.g., A"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Section *</label>
+                    <input type="text" id="sectionInput" placeholder="e.g., 2"
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <span id="headerLabel">Header Row</span>
+                    </label>
+                    <select id="headerRowSelect" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="0">Row 1</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <span id="dataStartLabel">Data Starts At</span>
+                    </label>
+                    <select id="dataStartRowSelect" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                        <option value="1">Row 2</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <span id="rowIdLabel">Row ID Column</span> *
+                        <span class="text-xs text-gray-500" id="rowIdHint">(Click one column header)</span>
+                    </label>
+                    <div class="px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-sm">
+                        <span id="rowColumnDisplay" class="text-blue-700 font-medium">Not selected</span>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">
+                        <span id="seatLabel">Seat Number Columns</span> *
+                        <span class="text-xs text-gray-500" id="seatHint">(Drag across column headers)</span>
+                    </label>
+                    <div class="px-3 py-2 bg-green-50 border border-green-200 rounded-md text-sm">
+                        <span id="seatColumnsDisplay" class="text-green-700 font-medium">Not selected</span>
+                    </div>
+                </div>
+            </div>
+
+            <div class="mb-4">
+                <label class="flex items-center">
+                    <input type="checkbox" id="filterKillCheckbox" checked class="w-4 h-4 text-blue-600 rounded">
+                    <span class="ml-2 text-sm text-gray-700">Filter out cells containing "Kill" or "Restricted View"</span>
+                </label>
+            </div>
+        </div>
+
+        <!-- Step 3: Preview & Select -->
+        <div id="previewSection" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">
+                <span id="step3Title">Step 3: Select Columns from Grid</span>
+            </h2>
+            <p class="text-sm text-gray-600 mb-3" id="step3Instructions">
+                <strong>Instructions:</strong> Click a single column for Row ID, then drag across columns for Seat Numbers
+            </p>
+            <p class="text-sm text-gray-600 mb-4" id="step3Legend">
+                <span class="inline-block w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-1"></span> = Row ID Column (Click)
+                <span class="inline-block w-4 h-4 bg-green-100 border border-green-300 rounded ml-3 mr-1"></span> = Seat Number Columns (Drag)
+            </p>
+            <div class="grid-container border border-gray-200 rounded-lg">
+                <table id="previewTable" class="min-w-full divide-y divide-gray-200 text-xs">
+                    <!-- Table populated by JavaScript -->
+                </table>
+            </div>
+        </div>
+
+        <!-- Step 4: Generate & Download -->
+        <div id="outputSection" class="bg-white rounded-lg shadow-md p-6 mb-6 hidden">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 4: Generate JSON Output</h2>
+
+            <div class="mb-4">
+                <button id="generateBtn"
+                    class="px-6 py-3 bg-blue-600 text-white font-semibold rounded-lg shadow-md hover:bg-blue-700 transition duration-200">
+                    Generate Seating Plan JSON
+                </button>
+            </div>
+
+            <div id="outputPreview" class="hidden">
+                <div class="mb-4 p-4 bg-blue-50 rounded-lg">
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-sm">
+                        <div>
+                            <p class="text-gray-600">Total Rows</p>
+                            <p class="text-2xl font-bold text-gray-800" id="statsRows">0</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600">Total Seats</p>
+                            <p class="text-2xl font-bold text-green-600" id="statsSeats">0</p>
+                        </div>
+                        <div>
+                            <p class="text-gray-600">Continuous Groups</p>
+                            <p class="text-2xl font-bold text-blue-600" id="statsGroups">0</p>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="mb-4">
+                    <label class="block text-sm font-medium text-gray-700 mb-2">JSON Output:</label>
+                    <textarea id="jsonOutput" rows="10" readonly
+                        class="w-full px-3 py-2 border border-gray-300 rounded-md font-mono text-xs bg-gray-50"
+                        placeholder="Generated JSON will appear here..."></textarea>
+                </div>
+
+                <div class="flex gap-3 flex-wrap">
+                    <button id="downloadJsonBtn"
+                        class="px-6 py-2 bg-green-600 text-white font-semibold rounded-lg shadow-md hover:bg-green-700 transition duration-200">
+                        Download JSON File
+                    </button>
+                    <button id="copyJsonBtn"
+                        class="px-6 py-2 bg-gray-600 text-white font-semibold rounded-lg shadow-md hover:bg-gray-700 transition duration-200">
+                        Copy to Clipboard
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="bg-gray-50 text-gray-400 py-6 mt-12">
+        <div class="container mx-auto px-4 text-center">
+            <p class="text-sm">Made by HY Huang while travelling in 🏛️, 🇬🇷</p>
+        </div>
+    </footer>
+
+    <script>
+        // Global state
+        let workbook = null;
+        let currentSheet = null;
+        let sheetData = [];
+        let config = {
+            zone: '',
+            section: '',
+            headerRow: 0,
+            dataStartRow: 1,
+            orientation: 'row', // 'row' or 'column'
+            rowColumnIndex: null,
+            seatColumnsStart: null,
+            seatColumnsEnd: null,
+            filterKill: true
+        };
+        let generatedJSON = null;
+
+        // Elements
+        const uploadBox = document.getElementById('uploadBox');
+        const fileInput = document.getElementById('fileInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const fileName = document.getElementById('fileName');
+        const sheetSelector = document.getElementById('sheetSelector');
+        const sheetSelect = document.getElementById('sheetSelect');
+        const mappingSection = document.getElementById('mappingSection');
+        const previewSection = document.getElementById('previewSection');
+        const outputSection = document.getElementById('outputSection');
+        const previewTable = document.getElementById('previewTable');
+
+        // Upload handling
+        uploadBox.addEventListener('click', () => fileInput.click());
+
+        uploadBox.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadBox.classList.add('dragover');
+        });
+
+        uploadBox.addEventListener('dragleave', () => {
+            uploadBox.classList.remove('dragover');
+        });
+
+        uploadBox.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadBox.classList.remove('dragover');
+            const file = e.dataTransfer.files[0];
+            if (file) handleFile(file);
+        });
+
+        fileInput.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) handleFile(file);
+        });
+
+        // File handling
+        async function handleFile(file) {
+            try {
+                fileName.textContent = file.name;
+                fileInfo.classList.remove('hidden');
+
+                const data = await file.arrayBuffer();
+                workbook = XLSX.read(data);
+
+                // Show sheet selector if multiple sheets
+                if (workbook.SheetNames.length > 1) {
+                    sheetSelector.classList.remove('hidden');
+                    sheetSelect.innerHTML = workbook.SheetNames.map((name, idx) =>
+                        `<option value="${idx}">${name}</option>`
+                    ).join('');
+                    sheetSelect.addEventListener('change', loadSheet);
+                }
+
+                loadSheet();
+            } catch (error) {
+                alert('Error reading file: ' + error.message);
+            }
+        }
+
+        function loadSheet() {
+            const sheetIndex = parseInt(sheetSelect.value || 0);
+            const sheetName = workbook.SheetNames[sheetIndex];
+            currentSheet = workbook.Sheets[sheetName];
+
+            // Convert to 2D array
+            sheetData = XLSX.utils.sheet_to_json(currentSheet, { header: 1, defval: '' });
+
+            // Populate header row dropdown
+            const headerRowSelect = document.getElementById('headerRowSelect');
+            const dataStartRowSelect = document.getElementById('dataStartRowSelect');
+            headerRowSelect.innerHTML = '';
+            dataStartRowSelect.innerHTML = '';
+
+            for (let i = 0; i < Math.min(10, sheetData.length); i++) {
+                headerRowSelect.innerHTML += `<option value="${i}">Row ${i + 1}</option>`;
+                dataStartRowSelect.innerHTML += `<option value="${i}">Row ${i + 1}</option>`;
+            }
+            dataStartRowSelect.value = "1";
+
+            // Show sections
+            mappingSection.classList.remove('hidden');
+            previewSection.classList.remove('hidden');
+            outputSection.classList.remove('hidden');
+
+            updateOrientationLabels(); // Initialize labels based on orientation
+            renderPreviewTable();
+        }
+
+        // Preview table rendering
+        function renderPreviewTable() {
+            if (sheetData.length === 0) return;
+
+            const maxCols = Math.max(...sheetData.map(row => row.length));
+            let html = '<thead class="bg-gray-50 sticky top-0"><tr>';
+            html += '<th class="px-2 py-2 text-left text-xs font-medium text-gray-500">#</th>';
+
+            // Column headers (A, B, C, ...)
+            for (let col = 0; col < maxCols; col++) {
+                const colLetter = getColumnLetter(col);
+
+                if (config.orientation === 'row') {
+                    // ROW MODE: Columns are selectable
+                    const isRowCol = config.rowColumnIndex === col;
+                    const isSeatCol = config.seatColumnsStart !== null &&
+                                      col >= config.seatColumnsStart &&
+                                      col <= config.seatColumnsEnd;
+
+                    const bgClass = isRowCol ? 'bg-blue-100 border-blue-300' :
+                                   isSeatCol ? 'bg-green-100 border-green-300' :
+                                   'bg-gray-100';
+
+                    html += `<th class="px-2 py-2 text-center text-xs font-bold ${bgClass} border cell-selectable"
+                                onmousedown="handleSelectionMouseDown(${col}, event)"
+                                onmouseenter="handleSelectionMouseEnter(${col})"
+                                onmouseup="handleSelectionMouseUp(${col})"
+                                data-index="${col}">
+                                ${colLetter}
+                             </th>`;
+                } else {
+                    // COLUMN MODE: Just show column letters, not selectable
+                    html += `<th class="px-2 py-2 text-center text-xs font-bold bg-gray-100 border">
+                                ${colLetter}
+                             </th>`;
+                }
+            }
+            html += '</tr></thead><tbody class="bg-white divide-y divide-gray-200">';
+
+            // Data rows (show first 20)
+            const rowsToShow = Math.min(20, sheetData.length);
+            for (let row = 0; row < rowsToShow; row++) {
+                html += '<tr class="hover:bg-gray-50">';
+
+                // Row number cell
+                if (config.orientation === 'row') {
+                    // ROW MODE: Row numbers not selectable
+                    html += `<td class="px-2 py-2 text-xs text-gray-500 font-medium">${row + 1}</td>`;
+                } else {
+                    // COLUMN MODE: Row numbers are selectable
+                    const isRowCol = config.rowColumnIndex === row;
+                    const isSeatCol = config.seatColumnsStart !== null &&
+                                      row >= config.seatColumnsStart &&
+                                      row <= config.seatColumnsEnd;
+
+                    const bgClass = isRowCol ? 'bg-blue-100 border-blue-300' :
+                                   isSeatCol ? 'bg-green-100 border-green-300' :
+                                   '';
+
+                    html += `<td class="px-2 py-2 text-xs text-gray-500 font-bold ${bgClass} border cell-selectable"
+                                onmousedown="handleSelectionMouseDown(${row}, event)"
+                                onmouseenter="handleSelectionMouseEnter(${row})"
+                                onmouseup="handleSelectionMouseUp(${row})"
+                                data-index="${row}">
+                                ${row + 1}
+                             </td>`;
+                }
+
+                // Data cells
+                for (let col = 0; col < maxCols; col++) {
+                    const value = sheetData[row][col] || '';
+
+                    if (config.orientation === 'row') {
+                        // ROW MODE: Highlight based on dataStartRow and selected columns
+                        const shouldHighlight = row >= config.dataStartRow;
+                        const isRowCol = shouldHighlight && config.rowColumnIndex === col;
+                        const isSeatCol = shouldHighlight && config.seatColumnsStart !== null &&
+                                          col >= config.seatColumnsStart &&
+                                          col <= config.seatColumnsEnd;
+
+                        const bgClass = isRowCol ? 'bg-blue-50' :
+                                       isSeatCol ? 'bg-green-50' : '';
+
+                        html += `<td class="px-2 py-2 text-xs ${bgClass} border border-gray-200">${value}</td>`;
+                    } else {
+                        // COLUMN MODE: Highlight based on dataStartRow (which is actually dataStartCol) and selected rows
+                        const shouldHighlight = col >= config.dataStartRow; // dataStartRow stores the starting column in column mode
+                        const isRowCol = shouldHighlight && config.rowColumnIndex === row;
+                        const isSeatCol = shouldHighlight && config.seatColumnsStart !== null &&
+                                          row >= config.seatColumnsStart &&
+                                          row <= config.seatColumnsEnd;
+
+                        const bgClass = isRowCol ? 'bg-blue-50' :
+                                       isSeatCol ? 'bg-green-50' : '';
+
+                        html += `<td class="px-2 py-2 text-xs ${bgClass} border border-gray-200">${value}</td>`;
+                    }
+                }
+                html += '</tr>';
+            }
+            html += '</tbody>';
+
+            previewTable.innerHTML = html;
+        }
+
+        function getColumnLetter(col) {
+            let letter = '';
+            while (col >= 0) {
+                letter = String.fromCharCode((col % 26) + 65) + letter;
+                col = Math.floor(col / 26) - 1;
+            }
+            return letter;
+        }
+
+        // Selection with drag support (works for both columns and rows)
+        let isDragging = false;
+        let dragStartIndex = null;
+        let dragCurrentIndex = null;
+
+        function handleSelectionMouseDown(index, event) {
+            event.preventDefault();
+            isDragging = true;
+            dragStartIndex = index;
+            dragCurrentIndex = index;
+        }
+
+        function handleSelectionMouseEnter(index) {
+            if (isDragging) {
+                dragCurrentIndex = index;
+                // Show preview during drag
+                const tempStart = Math.min(dragStartIndex, dragCurrentIndex);
+                const tempEnd = Math.max(dragStartIndex, dragCurrentIndex);
+
+                // Only update preview if dragging across multiple items
+                if (tempStart !== tempEnd) {
+                    config.seatColumnsStart = tempStart;
+                    config.seatColumnsEnd = tempEnd;
+                    renderPreviewTable();
+                }
+            }
+        }
+
+        function handleSelectionMouseUp(index) {
+            if (!isDragging) return;
+
+            const finalStart = Math.min(dragStartIndex, index);
+            const finalEnd = Math.max(dragStartIndex, index);
+
+            if (finalStart === finalEnd) {
+                // Single click - set as Row ID
+                config.rowColumnIndex = index;
+                if (config.orientation === 'row') {
+                    document.getElementById('rowColumnDisplay').textContent = getColumnLetter(index);
+                } else {
+                    document.getElementById('rowColumnDisplay').textContent = `Row ${index + 1}`;
+                }
+            } else {
+                // Drag range - set as Seat columns/rows
+                config.seatColumnsStart = finalStart;
+                config.seatColumnsEnd = finalEnd;
+                updateSeatColumnsDisplay();
+            }
+
+            isDragging = false;
+            dragStartIndex = null;
+            dragCurrentIndex = null;
+            renderPreviewTable();
+        }
+
+        // Global mouseup listener to handle drag end anywhere
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                handleSelectionMouseUp(dragCurrentIndex || dragStartIndex);
+            }
+        });
+
+        function updateSeatColumnsDisplay() {
+            if (config.seatColumnsStart !== null && config.seatColumnsEnd !== null) {
+                if (config.orientation === 'row') {
+                    const start = getColumnLetter(config.seatColumnsStart);
+                    const end = getColumnLetter(config.seatColumnsEnd);
+                    document.getElementById('seatColumnsDisplay').textContent =
+                        start === end ? start : `${start}-${end}`;
+                } else {
+                    const start = config.seatColumnsStart + 1; // +1 for display (row numbers start at 1)
+                    const end = config.seatColumnsEnd + 1;
+                    document.getElementById('seatColumnsDisplay').textContent =
+                        start === end ? `Row ${start}` : `Row ${start}-${end}`;
+                }
+            }
+        }
+
+        // Input handling
+        document.getElementById('zoneInput').addEventListener('input', (e) => {
+            config.zone = e.target.value;
+        });
+
+        document.getElementById('sectionInput').addEventListener('input', (e) => {
+            config.section = e.target.value;
+        });
+
+        document.getElementById('headerRowSelect').addEventListener('change', (e) => {
+            config.headerRow = parseInt(e.target.value);
+        });
+
+        document.getElementById('dataStartRowSelect').addEventListener('change', (e) => {
+            config.dataStartRow = parseInt(e.target.value);
+            renderPreviewTable(); // Re-render to update highlighting
+        });
+
+        document.getElementById('filterKillCheckbox').addEventListener('change', (e) => {
+            config.filterKill = e.target.checked;
+        });
+
+        // Orientation selection
+        document.getElementById('orientationRow').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                config.orientation = 'row';
+                updateOrientationLabels();
+                // Reset selections when changing orientation
+                config.rowColumnIndex = null;
+                config.seatColumnsStart = null;
+                config.seatColumnsEnd = null;
+                document.getElementById('rowColumnDisplay').textContent = 'Not selected';
+                document.getElementById('seatColumnsDisplay').textContent = 'Not selected';
+                renderPreviewTable();
+            }
+        });
+
+        document.getElementById('orientationColumn').addEventListener('change', (e) => {
+            if (e.target.checked) {
+                config.orientation = 'column';
+                updateOrientationLabels();
+                // Reset selections when changing orientation
+                config.rowColumnIndex = null;
+                config.seatColumnsStart = null;
+                config.seatColumnsEnd = null;
+                document.getElementById('rowColumnDisplay').textContent = 'Not selected';
+                document.getElementById('seatColumnsDisplay').textContent = 'Not selected';
+                renderPreviewTable();
+            }
+        });
+
+        function updateOrientationLabels() {
+            if (!sheetData || sheetData.length === 0) return;
+
+            const maxCols = Math.max(...sheetData.map(row => row.length));
+
+            if (config.orientation === 'row') {
+                // BY ROW MODE
+                document.getElementById('headerLabel').textContent = 'Header Row';
+                document.getElementById('dataStartLabel').textContent = 'Data Starts At';
+                document.getElementById('rowIdLabel').textContent = 'Row ID Column';
+                document.getElementById('rowIdHint').textContent = '(Click one column header)';
+                document.getElementById('seatLabel').textContent = 'Seat Number Columns';
+                document.getElementById('seatHint').textContent = '(Drag across column headers)';
+                document.getElementById('step3Title').textContent = 'Step 3: Select Columns from Grid';
+                document.getElementById('step3Instructions').innerHTML = '<strong>Instructions:</strong> Click a single column for Row ID, then drag across columns for Seat Numbers';
+                document.getElementById('step3Legend').innerHTML = `
+                    <span class="inline-block w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-1"></span> = Row ID Column (Click)
+                    <span class="inline-block w-4 h-4 bg-green-100 border border-green-300 rounded ml-3 mr-1"></span> = Seat Number Columns (Drag)
+                `;
+
+                // Populate row dropdowns
+                const headerSelect = document.getElementById('headerRowSelect');
+                const dataStartSelect = document.getElementById('dataStartRowSelect');
+                headerSelect.innerHTML = '';
+                dataStartSelect.innerHTML = '';
+                for (let i = 0; i < Math.min(20, sheetData.length); i++) {
+                    headerSelect.innerHTML += `<option value="${i}">Row ${i + 1}</option>`;
+                    dataStartSelect.innerHTML += `<option value="${i}">Row ${i + 1}</option>`;
+                }
+                headerSelect.value = config.headerRow;
+                dataStartSelect.value = config.dataStartRow;
+
+            } else {
+                // BY COLUMN MODE
+                document.getElementById('headerLabel').textContent = 'Header Column';
+                document.getElementById('dataStartLabel').textContent = 'Data Starts At Column';
+                document.getElementById('rowIdLabel').textContent = 'Row ID Row';
+                document.getElementById('rowIdHint').textContent = '(Click one row number)';
+                document.getElementById('seatLabel').textContent = 'Seat Number Rows';
+                document.getElementById('seatHint').textContent = '(Drag across row numbers)';
+                document.getElementById('step3Title').textContent = 'Step 3: Select Rows from Grid';
+                document.getElementById('step3Instructions').innerHTML = '<strong>Instructions:</strong> Click a single row for Row ID, then drag across rows for Seat Numbers';
+                document.getElementById('step3Legend').innerHTML = `
+                    <span class="inline-block w-4 h-4 bg-blue-100 border border-blue-300 rounded mr-1"></span> = Row ID Row (Click)
+                    <span class="inline-block w-4 h-4 bg-green-100 border border-green-300 rounded ml-3 mr-1"></span> = Seat Number Rows (Drag)
+                `;
+
+                // Populate column dropdowns
+                const headerSelect = document.getElementById('headerRowSelect');
+                const dataStartSelect = document.getElementById('dataStartRowSelect');
+                headerSelect.innerHTML = '';
+                dataStartSelect.innerHTML = '';
+                for (let i = 0; i < maxCols; i++) {
+                    const colLetter = getColumnLetter(i);
+                    headerSelect.innerHTML += `<option value="${i}">Column ${colLetter}</option>`;
+                    dataStartSelect.innerHTML += `<option value="${i}">Column ${colLetter}</option>`;
+                }
+                headerSelect.value = config.headerRow;
+                dataStartSelect.value = config.dataStartRow;
+            }
+        }
+
+        // Generate JSON
+        document.getElementById('generateBtn').addEventListener('click', generateJSON);
+
+        function generateJSON() {
+            // Validation
+            if (!config.zone || !config.section) {
+                alert('Please enter Zone and Section');
+                return;
+            }
+            if (config.rowColumnIndex === null) {
+                alert('Please select Row ID Column');
+                return;
+            }
+            if (config.seatColumnsStart === null || config.seatColumnsEnd === null) {
+                alert('Please select Seat Number Columns');
+                return;
+            }
+
+            const output = [];
+            let totalSeats = 0;
+
+            if (config.orientation === 'row') {
+                // BY ROW: Row IDs in column, seats spread across columns
+                for (let rowIdx = config.dataStartRow; rowIdx < sheetData.length; rowIdx++) {
+                    const row = sheetData[rowIdx];
+                    const rowId = row[config.rowColumnIndex];
+
+                    if (!rowId) continue; // Skip empty row IDs
+
+                    let currentGroup = [];
+
+                    // Process seat columns
+                    for (let col = config.seatColumnsStart; col <= config.seatColumnsEnd; col++) {
+                        const seatValue = row[col];
+
+                        // Check if should include this seat
+                        if (seatValue && seatValue !== '') {
+                            const seatStr = String(seatValue).trim();
+
+                            // Filter logic
+                            if (config.filterKill) {
+                                const lowerSeat = seatStr.toLowerCase();
+                                if (lowerSeat.includes('kill') ||
+                                    lowerSeat.includes('restricted') ||
+                                    lowerSeat.includes('restricted view')) {
+                                    // Break continuity
+                                    if (currentGroup.length > 0) {
+                                        output.push(currentGroup);
+                                        currentGroup = [];
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            // Create seat ID
+                            const seatId = `${config.zone}-${config.section}--${rowId}---${seatStr}`;
+                            currentGroup.push(seatId);
+                            totalSeats++;
+                        } else {
+                            // Empty cell breaks continuity
+                            if (currentGroup.length > 0) {
+                                output.push(currentGroup);
+                                currentGroup = [];
+                            }
+                        }
+                    }
+
+                    // Add remaining group
+                    if (currentGroup.length > 0) {
+                        output.push(currentGroup);
+                    }
+                }
+            } else {
+                // BY COLUMN: Row IDs in row, seats spread down columns
+                for (let col = config.seatColumnsStart; col <= config.seatColumnsEnd; col++) {
+                    const rowId = sheetData[config.rowColumnIndex][col];
+
+                    if (!rowId) continue; // Skip empty row IDs
+
+                    let currentGroup = [];
+
+                    // Process seat rows (from dataStartRow downwards)
+                    for (let rowIdx = config.dataStartRow; rowIdx < sheetData.length; rowIdx++) {
+                        const seatValue = sheetData[rowIdx][col];
+
+                        // Check if should include this seat
+                        if (seatValue && seatValue !== '') {
+                            const seatStr = String(seatValue).trim();
+
+                            // Filter logic
+                            if (config.filterKill) {
+                                const lowerSeat = seatStr.toLowerCase();
+                                if (lowerSeat.includes('kill') ||
+                                    lowerSeat.includes('restricted') ||
+                                    lowerSeat.includes('restricted view')) {
+                                    // Break continuity
+                                    if (currentGroup.length > 0) {
+                                        output.push(currentGroup);
+                                        currentGroup = [];
+                                    }
+                                    continue;
+                                }
+                            }
+
+                            // Create seat ID
+                            const seatId = `${config.zone}-${config.section}--${rowId}---${seatStr}`;
+                            currentGroup.push(seatId);
+                            totalSeats++;
+                        } else {
+                            // Empty cell breaks continuity
+                            if (currentGroup.length > 0) {
+                                output.push(currentGroup);
+                                currentGroup = [];
+                            }
+                        }
+                    }
+
+                    // Add remaining group
+                    if (currentGroup.length > 0) {
+                        output.push(currentGroup);
+                    }
+                }
+            }
+
+            generatedJSON = output;
+
+            // Update stats
+            document.getElementById('statsRows').textContent = sheetData.length - config.dataStartRow;
+            document.getElementById('statsSeats').textContent = totalSeats;
+            document.getElementById('statsGroups').textContent = output.length;
+
+            // Display JSON
+            document.getElementById('jsonOutput').value = JSON.stringify(output, null, 2);
+            document.getElementById('outputPreview').classList.remove('hidden');
+        }
+
+        // Download JSON
+        document.getElementById('downloadJsonBtn').addEventListener('click', () => {
+            if (!generatedJSON) return;
+
+            // Generate filename based on Zone and Section
+            const zone = config.zone || 'Zone';
+            const section = config.section || 'Section';
+            const filename = `Zone_${zone}_Section_${section}.json`;
+
+            const json = JSON.stringify(generatedJSON, null, 2);
+            const blob = new Blob([json], { type: 'application/json' });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            window.URL.revokeObjectURL(url);
+        });
+
+        // Copy to clipboard
+        document.getElementById('copyJsonBtn').addEventListener('click', async () => {
+            const jsonText = document.getElementById('jsonOutput').value;
+            try {
+                await navigator.clipboard.writeText(jsonText);
+                const btn = document.getElementById('copyJsonBtn');
+                const originalText = btn.textContent;
+                btn.textContent = '✓ Copied!';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                }, 2000);
+            } catch (err) {
+                alert('Failed to copy to clipboard');
+            }
+        });
+    </script>
+</body>
+</html>
