@@ -1,35 +1,43 @@
 # Seating Assignment System
 
-A web-based seating assignment tool that uses a best-available algorithm with orphan seat prevention.
+A web-based seating assignment tool that automatically assigns seats to orders using a best-available algorithm with orphan seat prevention.
+
+🔗 **Live Application**: https://hongyanhuang.github.io/seating-agent/
 
 ## Features
 
-- ✅ Upload CSV file with orders
-- ✅ Configure seating plan via JSON
-- ✅ Duplicate seat detection (validates no duplicate seats in seating plan)
-- ✅ Best-available algorithm (assigns largest orders first)
-- ✅ Orphan seat prevention (never leaves exactly 1 seat in a row)
-- ✅ Export processed CSV with seat assignments
-- ✅ Download remaining seats as JSON
-- ✅ Client-side processing (no data leaves your browser)
+- 🎟️ Upload CSV file with orders
+- 🪑 Multiple seating plan input methods (paste JSON or upload multiple files)
+- ✅ Duplicate seat detection across all seating plans
+- 🎯 Best-available algorithm (assigns largest orders first)
+- 🚫 Orphan seat prevention (never leaves exactly 1 seat in a row)
+- 📊 Export processed CSV with seat assignments
+- 💾 Download remaining seats as JSON
+- 🔒 100% client-side processing (no data leaves your browser)
+- 🛠️ Built-in XLSX/CSV to JSON converter tool
 
 ## How to Use
 
-### 1. Open the Application
+### Step 1: Upload Orders CSV
 
-Simply open `index.html` in your web browser, or visit the live version at:
-`https://yourusername.github.io/seating-agent/`
+1. Click or drag-and-drop your CSV file containing orders
+2. Preview the first 5 rows to verify the data
+3. Select which column contains the ticket quantity by clicking the radio button
 
-### 2. Upload Orders CSV
+**CSV Requirements:**
+- Must have a header row
+- Include a column with ticket quantities (numbers)
+- Can contain any additional columns (customer info, order ID, etc.)
 
-- Click or drag-and-drop your CSV file
-- Select which column contains the ticket quantity
-- Example: See `example_orders.csv`
+### Step 2: Configure Seating Plan
 
-### 3. Configure Seating Plan
+You have two options:
 
-Upload a JSON file or paste JSON directly. Format:
+#### Option A: Paste JSON
 
+Paste your seating plan JSON directly into the textarea.
+
+**Format:**
 ```json
 [
   ["A-1--2---1", "A-1--2---2", "A-1--2---3"],
@@ -37,102 +45,128 @@ Upload a JSON file or paste JSON directly. Format:
 ]
 ```
 
-- Each inner array = one row of consecutive seats
+**Rules:**
+- Each inner array = one group of consecutive seats
 - Seat format: `ZONE-SECTION--ROW---SEAT`
-  - `A-1--2---3` means Zone A, Section 1, Row 2, Seat 3
-- **Duplicate Detection**: The system will automatically detect and reject duplicate seats
-  - Same seat cannot appear multiple times (even across different rows)
-  - Example: `["A-1--2---1", "A-1--2---1"]` will be rejected
+  - Example: `A-1--2---3` means Zone A, Section 1, Row 2, Seat 3
 
-Example: See `example_seating_plan.json`
-Test duplicate detection: See `example_duplicate_seats.json`
+#### Option B: Upload Multiple JSON Files
 
-### 4. Process & Download
+1. Select "Upload Files" mode
+2. Click "Choose File" to upload one or more JSON files
+3. Upload files from different folders as needed (can upload multiple times)
+4. Review the uploaded files list:
+   - Files are numbered (#1, #2, #3...) showing merge order
+   - Each file shows seat count
+   - Click **×** to remove individual files
+   - Click **Clear All** to start over
+5. When ready, click **"Upload Finished - Merge & Validate"**
+6. Files will be merged in order: File #1 + File #2 + File #3...
 
-- Click "Process Seat Assignments"
-- Review the results and statistics:
-  - Total orders processed
-  - Successfully assigned orders
-  - Unassigned orders (if any)
-  - **Remaining seats** (seats not assigned to any order)
-- **Download Processed CSV**: Get your original CSV with seat assignments added
-- **Download Remaining Seats (JSON)**: Get a JSON file of all unassigned seats
-  - Format matches the original seating plan format
-  - Can be used for future seat assignments
+**Why use multiple files?**
+- Different zones/sections in separate files
+- Easier management of large venues
+- Combine files from different sources
 
-## Algorithm Details
+#### Need to Convert XLSX/CSV to JSON?
 
-### Best-Available Algorithm
+Click **"Use the Transformer Tool →"** in Step 2 to access the built-in converter:
 
-1. **Sort orders by quantity** (largest first)
-2. **For each order:**
-   - Find first row with enough consecutive available seats
-   - Check: Would assignment leave exactly 1 seat? (orphan)
-   - If yes → skip this row, try next
-   - If no → assign seats and mark as used
+1. Upload your XLSX or CSV file with seating data
+2. Select data orientation (by row or by column)
+3. Drag to select which columns/rows contain:
+   - Header row/column
+   - Where data starts
+   - Row ID column/row
+   - Zone, Section, and Seat number columns/rows
+4. Download individual JSON files (named automatically as `Zone_X_Section_Y.json`)
+5. Upload the JSON files back to the main page
 
-### Output Format
+**Duplicate Detection:**
+- System automatically detects duplicate seats
+- Same seat cannot appear multiple times (even across different files/rows)
+- Invalid files are highlighted in red with error messages
 
-Original CSV columns + new columns:
+### Step 3: Process & Download
 
-- `raw_data`: Array of assigned seats (e.g., `["A-1--2---1","A-1--2---2"]`)
+1. Click **"Process Seat Assignments"**
+2. Review the results:
+   - ✅ Successfully assigned orders
+   - ❌ Unassigned orders (if any)
+   - 📊 Remaining available seats
+3. Download options:
+   - **Download Processed CSV**: Original CSV + new seat columns
+   - **Download Remaining Seats (JSON)**: Unassigned seats for future use
+
+## Output Format
+
+Your original CSV will have these new columns added:
+
+- `raw_data`: JSON array of assigned seats
 - `zone1, section1, row1, seat1`: First ticket details
 - `zone2, section2, row2, seat2`: Second ticket details
-- ... (continues based on max order quantity)
+- ... (continues based on maximum order quantity)
 
-Unassigned orders will have empty values for seat columns.
-
-## Deploying to GitHub Pages
-
-### Method 1: GitHub Web Interface
-
-1. Go to your repository settings
-2. Navigate to "Pages" section
-3. Under "Source", select branch `main` and folder `/ (root)`
-4. Click "Save"
-5. Your site will be live at: `https://yourusername.github.io/seating-agent/`
-
-### Method 2: Command Line
-
-```bash
-# Initialize git (if not already done)
-git init
-git add .
-git commit -m "Add seating assignment system"
-
-# Create and push to GitHub
-git remote add origin https://github.com/yourusername/seating-agent.git
-git branch -M main
-git push -u origin main
-
-# Enable GitHub Pages via repository settings
+**Example:**
+If Order #1 requested 3 tickets and was assigned seats A-1--2---1, A-1--2---2, A-1--2---3:
+```
+raw_data: ["A-1--2---1","A-1--2---2","A-1--2---3"]
+zone1: A    section1: 1    row1: 2    seat1: 1
+zone2: A    section2: 1    row2: 2    seat2: 2
+zone3: A    section3: 1    row3: 2    seat3: 3
 ```
 
-## Testing
+Unassigned orders will have empty values for all seat columns.
 
-Use the provided example files:
+## How the Algorithm Works
 
-1. Upload `example_orders.csv` (8 orders, various quantities)
-2. Upload `example_seating_plan.json` (6 rows, 28 total seats)
-3. Select "quantity" as the quantity column
-4. Process and review results
+The system uses a **best-available algorithm** with **orphan seat prevention**:
 
-Expected result: Most orders assigned, respecting orphan seat rule.
+1. **Sort orders** by quantity (largest first)
+   - Larger groups are harder to seat, so they get priority
+2. **For each order:**
+   - Find the first row with enough consecutive available seats
+   - Check: Would this assignment leave exactly 1 seat in the row?
+   - If **YES** → Skip this row (orphan prevention), try next row
+   - If **NO** → Assign the seats and mark them as used
+3. **Repeat** until all orders are processed
 
-## Technical Stack
+**Orphan Seat Prevention Example:**
+- Row has 5 available seats: `[1, 2, 3, 4, 5]`
+- Order requests 4 seats
+- Assignment would leave exactly 1 seat → **SKIP** this row
+- Try next row instead
 
-- **HTML/CSS/JavaScript** - Single-page application
-- **Tailwind CSS** - Styling (via CDN)
-- **PapaParse** - CSV parsing (via CDN)
-- **No backend required** - 100% client-side
+This ensures no single seats are left stranded, maximizing the usability of remaining seats.
+
+## Privacy & Security
+
+- ✅ **100% client-side processing** - All calculations happen in your browser
+- ✅ **No data uploaded to servers** - Your CSV and seating data never leave your computer
+- ✅ **No tracking or analytics** - Completely private
+- ✅ **Works offline** - Once loaded, works without internet (except CDN resources)
 
 ## Browser Compatibility
 
-- Chrome/Edge: ✅
-- Firefox: ✅
-- Safari: ✅
-- Any modern browser with JavaScript enabled
+Works on all modern browsers:
+- Chrome/Edge ✅
+- Firefox ✅
+- Safari ✅
+- Any browser with JavaScript enabled
 
-## License
+## Tools Included
 
-MIT License - feel free to use and modify!
+### 1. Seating Assignment System
+Main tool for assigning seats to orders
+
+### 2. Transformer Tool
+Convert XLSX/CSV seating data to JSON format
+- Supports both row-based and column-based data layouts
+- Drag-and-drop column/row selection
+- Handles "Kill" seats (excluded from output)
+- Groups consecutive seats automatically
+- Downloads with custom filenames
+
+---
+
+Made by HY Huang while travelling in 🏛️, 🇬🇷
