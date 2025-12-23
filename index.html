@@ -60,19 +60,56 @@
                     </a>
                 </p>
             </div>
-            <div class="mb-4">
-                <label class="block text-sm font-medium text-gray-700 mb-2">Upload JSON file or paste below:</label>
-                <input type="file" id="jsonFile" accept=".json" class="mb-2 block w-full text-sm text-gray-500
+
+            <!-- Input Mode Selection -->
+            <div class="mb-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <label class="block text-sm font-medium text-gray-700 mb-3">Input Mode</label>
+                <div class="flex gap-6">
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="inputMode" value="paste" id="modePaste" checked
+                            class="w-4 h-4 text-blue-600">
+                        <span class="ml-2 text-sm text-gray-700">
+                            <strong>Paste JSON</strong> - Paste seating plan directly
+                        </span>
+                    </label>
+                    <label class="flex items-center cursor-pointer">
+                        <input type="radio" name="inputMode" value="upload" id="modeUpload"
+                            class="w-4 h-4 text-blue-600">
+                        <span class="ml-2 text-sm text-gray-700">
+                            <strong>Upload Files</strong> - Upload one or more JSON files
+                        </span>
+                    </label>
+                </div>
+            </div>
+
+            <!-- Paste Mode -->
+            <div id="pasteMode" class="mb-4">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Paste JSON:</label>
+                <textarea id="seatingPlan" rows="8"
+                    class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
+                    placeholder='[["A-1--2---1", "A-1--2---2", "A-1--2---3"], ["B-1--3---1", "B-1--3---2"]]'></textarea>
+                <p class="text-xs text-gray-500 mt-2">Format: Array of arrays. Each inner array = consecutive seats. Seat format: "ZONE-SECTION--ROW---SEAT"</p>
+            </div>
+
+            <!-- Upload Mode -->
+            <div id="uploadMode" class="mb-4 hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-2">Upload JSON Files (multiple allowed):</label>
+                <input type="file" id="jsonFiles" accept=".json" multiple class="mb-2 block w-full text-sm text-gray-500
                     file:mr-4 file:py-2 file:px-4
                     file:rounded-md file:border-0
                     file:text-sm file:font-semibold
                     file:bg-blue-50 file:text-blue-700
                     hover:file:bg-blue-100">
+                <p class="text-xs text-gray-500 mt-2">Select multiple files to merge them in order</p>
+
+                <!-- Uploaded Files List -->
+                <div id="uploadedFilesList" class="mt-3 hidden">
+                    <p class="text-sm font-medium text-gray-700 mb-2">Uploaded Files (in merge order):</p>
+                    <div id="filesList" class="space-y-2"></div>
+                </div>
             </div>
-            <textarea id="seatingPlan" rows="8"
-                class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500 font-mono text-sm"
-                placeholder='[["A-1--2---1", "A-1--2---2", "A-1--2---3"], ["B-1--3---1", "B-1--3---2"]]'></textarea>
-            <p class="text-xs text-gray-500 mt-2">Format: Array of arrays. Each inner array = consecutive seats. Seat format: "ZONE-SECTION--ROW---SEAT"</p>
+
+            <!-- Stats and Errors -->
             <div id="seatingStats" class="mt-3 hidden">
                 <p class="text-sm text-green-600 font-medium">✓ Valid JSON - <span id="totalSeats"></span> total seats in <span id="totalRows"></span> rows</p>
             </div>
@@ -230,24 +267,224 @@
             checkReadyToProcess();
         };
 
-        // JSON Upload handling
-        const jsonFileInput = document.getElementById('jsonFile');
+        // JSON Mode Handling
+        const modePaste = document.getElementById('modePaste');
+        const modeUpload = document.getElementById('modeUpload');
+        const pasteModeSection = document.getElementById('pasteMode');
+        const uploadModeSection = document.getElementById('uploadMode');
         const seatingPlanTextarea = document.getElementById('seatingPlan');
+        const jsonFilesInput = document.getElementById('jsonFiles');
+        const uploadedFilesList = document.getElementById('uploadedFilesList');
+        const filesList = document.getElementById('filesList');
         const seatingStats = document.getElementById('seatingStats');
 
-        jsonFileInput.addEventListener('change', (e) => {
-            const file = e.target.files[0];
-            if (file) {
-                const reader = new FileReader();
-                reader.onload = (e) => {
-                    seatingPlanTextarea.value = e.target.result;
-                    validateSeatingPlan();
-                };
-                reader.readAsText(file);
+        // Store uploaded files and their parsed JSON
+        let uploadedFiles = [];
+
+        // Mode toggle handlers
+        modePaste.addEventListener('change', () => {
+            if (modePaste.checked) {
+                pasteModeSection.classList.remove('hidden');
+                uploadModeSection.classList.add('hidden');
+                validateSeatingPlan(); // Re-validate from textarea
             }
         });
 
-        seatingPlanTextarea.addEventListener('input', validateSeatingPlan);
+        modeUpload.addEventListener('change', () => {
+            if (modeUpload.checked) {
+                pasteModeSection.classList.add('hidden');
+                uploadModeSection.classList.remove('hidden');
+                if (uploadedFiles.length > 0) {
+                    mergeAndValidateJSON();
+                } else {
+                    // Clear validation when switching to upload mode with no files
+                    seatingPlanData = null;
+                    hideValidationMessages();
+                    checkReadyToProcess();
+                }
+            }
+        });
+
+        // Textarea input handler for paste mode
+        seatingPlanTextarea.addEventListener('input', () => {
+            if (modePaste.checked) {
+                validateSeatingPlan();
+            }
+        });
+
+        // Multiple file upload handler
+        jsonFilesInput.addEventListener('change', async (e) => {
+            const files = Array.from(e.target.files);
+            if (files.length === 0) return;
+
+            uploadedFiles = []; // Clear previous files
+            const fileReadPromises = [];
+
+            // Read all files
+            for (let i = 0; i < files.length; i++) {
+                const file = files[i];
+                const promise = new Promise((resolve, reject) => {
+                    const reader = new FileReader();
+                    reader.onload = (e) => {
+                        try {
+                            const json = JSON.parse(e.target.result);
+                            resolve({ name: file.name, json: json, index: i });
+                        } catch (err) {
+                            resolve({ name: file.name, error: `Invalid JSON: ${err.message}`, index: i });
+                        }
+                    };
+                    reader.onerror = () => reject(new Error(`Failed to read ${file.name}`));
+                    reader.readAsText(file);
+                });
+                fileReadPromises.push(promise);
+            }
+
+            // Wait for all files to be read
+            try {
+                const results = await Promise.all(fileReadPromises);
+                // Sort by original index to maintain order
+                results.sort((a, b) => a.index - b.index);
+                uploadedFiles = results;
+
+                // Display files list
+                displayFilesList();
+
+                // Merge and validate
+                mergeAndValidateJSON();
+            } catch (err) {
+                showError(`Error reading files: ${err.message}`);
+            }
+        });
+
+        function displayFilesList() {
+            if (uploadedFiles.length === 0) {
+                uploadedFilesList.classList.add('hidden');
+                return;
+            }
+
+            uploadedFilesList.classList.remove('hidden');
+            filesList.innerHTML = uploadedFiles.map((file, index) => {
+                if (file.error) {
+                    return `
+                        <div class="flex items-center justify-between p-2 bg-red-50 border border-red-200 rounded">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-gray-500">#${index + 1}</span>
+                                <span class="text-sm text-gray-700">${file.name}</span>
+                                <span class="text-xs text-red-600">${file.error}</span>
+                            </div>
+                        </div>
+                    `;
+                } else {
+                    const seatCount = file.json.reduce((sum, row) => sum + row.length, 0);
+                    return `
+                        <div class="flex items-center justify-between p-2 bg-green-50 border border-green-200 rounded">
+                            <div class="flex items-center gap-2">
+                                <span class="text-xs font-bold text-gray-500">#${index + 1}</span>
+                                <span class="text-sm text-gray-700">${file.name}</span>
+                                <span class="text-xs text-gray-500">(${seatCount} seats)</span>
+                            </div>
+                        </div>
+                    `;
+                }
+            }).join('');
+        }
+
+        function mergeAndValidateJSON() {
+            // Check if any file has error
+            const hasErrors = uploadedFiles.some(file => file.error);
+            if (hasErrors) {
+                seatingPlanData = null;
+                showError('Some files contain invalid JSON. Please check the files list above.');
+                checkReadyToProcess();
+                return;
+            }
+
+            // Merge all JSON arrays
+            const mergedJSON = [];
+            uploadedFiles.forEach(file => {
+                if (Array.isArray(file.json)) {
+                    file.json.forEach(row => {
+                        if (Array.isArray(row)) {
+                            mergedJSON.push(row);
+                        }
+                    });
+                }
+            });
+
+            // Validate merged JSON
+            validateMergedJSON(mergedJSON);
+        }
+
+        function validateMergedJSON(json) {
+            const seatingError = document.getElementById('seatingError');
+            const seatingErrorMsg = document.getElementById('seatingErrorMsg');
+            const seatingPreview = document.getElementById('seatingPreview');
+            const seatingPreviewContent = document.getElementById('seatingPreviewContent');
+
+            if (json.length === 0) {
+                seatingPlanData = null;
+                showError('No valid seating data found in uploaded files');
+                checkReadyToProcess();
+                return;
+            }
+
+            // Check for duplicate seats
+            const seatSet = new Set();
+            const duplicateSet = new Set();
+
+            for (let rowIndex = 0; rowIndex < json.length; rowIndex++) {
+                for (let seatIndex = 0; seatIndex < json[rowIndex].length; seatIndex++) {
+                    const seat = json[rowIndex][seatIndex];
+                    if (seatSet.has(seat)) {
+                        duplicateSet.add(seat);
+                    } else {
+                        seatSet.add(seat);
+                    }
+                }
+            }
+
+            if (duplicateSet.size > 0) {
+                seatingPlanData = null;
+                seatingStats.classList.add('hidden');
+                seatingError.classList.remove('hidden');
+                const duplicatesArray = Array.from(duplicateSet);
+                seatingErrorMsg.textContent = `Duplicate seats found: ${duplicatesArray.join(', ')}`;
+
+                // Show preview with highlighted duplicates
+                seatingPreview.classList.remove('hidden');
+                renderSeatingPlanWithHighlights(json, duplicateSet, seatingPreviewContent);
+
+                checkReadyToProcess();
+                return;
+            }
+
+            // Valid merged JSON
+            seatingPlanData = json;
+            const totalSeats = json.reduce((sum, row) => sum + row.length, 0);
+            const totalRows = json.length;
+
+            document.getElementById('totalSeats').textContent = totalSeats;
+            document.getElementById('totalRows').textContent = totalRows;
+            seatingStats.classList.remove('hidden');
+            seatingError.classList.add('hidden');
+            seatingPreview.classList.add('hidden');
+            checkReadyToProcess();
+        }
+
+        function showError(message) {
+            const seatingError = document.getElementById('seatingError');
+            const seatingErrorMsg = document.getElementById('seatingErrorMsg');
+            seatingErrorMsg.textContent = message;
+            seatingError.classList.remove('hidden');
+            document.getElementById('seatingStats').classList.add('hidden');
+            document.getElementById('seatingPreview').classList.add('hidden');
+        }
+
+        function hideValidationMessages() {
+            document.getElementById('seatingError').classList.add('hidden');
+            document.getElementById('seatingStats').classList.add('hidden');
+            document.getElementById('seatingPreview').classList.add('hidden');
+        }
 
         function validateSeatingPlan() {
             const seatingError = document.getElementById('seatingError');
