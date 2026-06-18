@@ -131,6 +131,55 @@
             </div>
         </div>
 
+        <!-- Step 3: Assign Sequence -->
+        <div class="bg-white rounded-lg shadow-md p-6 mb-6">
+            <h2 class="text-2xl font-semibold text-gray-700 mb-4">Step 3: Assign Sequence</h2>
+            <p class="text-sm text-gray-600 mb-3">Choose how orders are prioritised before seat assignment:</p>
+            <div class="flex flex-col gap-3">
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="assignSequence" value="largest-first" id="seqLargestFirst" checked
+                        class="w-4 h-4 text-blue-600">
+                    <span class="ml-2 text-sm text-gray-700">
+                        <strong>By quantity (Recommend)</strong> — assign seats to largest orders first (default)
+                    </span>
+                </label>
+                <label class="flex items-center cursor-pointer">
+                    <input type="radio" name="assignSequence" value="custom" id="seqCustom"
+                        class="w-4 h-4 text-blue-600">
+                    <span class="ml-2 text-sm text-gray-700">
+                        <strong>By customized column</strong> — sort by a chosen column
+                    </span>
+                </label>
+                <div id="customSeqOptions" class="ml-6 mt-1 hidden">
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Sort by column:</label>
+                    <select id="assignSeqColumn"
+                        class="px-3 py-2 border border-gray-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 min-w-48">
+                        <option value="">— upload a CSV first —</option>
+                    </select>
+                    <div class="flex gap-4 mt-2">
+                        <label class="flex items-center cursor-pointer">
+                            <input type="radio" name="assignSeqOrder" value="asc" id="seqOrderAsc" checked
+                                class="w-4 h-4 text-blue-600">
+                            <span class="ml-2 text-sm text-gray-700">Ascending</span>
+                        </label>
+                        <label class="flex items-center cursor-pointer">
+                            <input type="radio" name="assignSeqOrder" value="desc" id="seqOrderDesc"
+                                class="w-4 h-4 text-blue-600">
+                            <span class="ml-2 text-sm text-gray-700">Descending</span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-gray-500 mt-1">Column must be numeric (integers or decimals). Ties in this column are broken by quantity (largest first). Non-numeric values will block processing.</p>
+                    <div class="mt-2 p-3 bg-yellow-50 border border-yellow-300 rounded-md">
+                        <p class="text-sm text-yellow-800 font-medium">⚠ Warning</p>
+                        <p class="text-sm text-yellow-700 mt-1">Customized assign sequence does not guarantee largest orders are seated first. This may result in orphan seats (isolated unsellable seats) or some orders failing to be assigned if smaller groups are processed before larger ones.</p>
+                    </div>
+                    <div id="assignSeqError" class="mt-2 hidden">
+                        <p class="text-sm text-red-600 font-medium">✗ <span id="assignSeqErrorMsg"></span></p>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Process Button -->
         <div class="text-center mb-6">
             <button id="processBtn" disabled
@@ -174,6 +223,9 @@
         let seatingPlanData = null;
         let quantityColumnName = null;
         let remainingSeats = null;
+        let assignSequenceMode = 'largest-first';
+        let assignSequenceColumn = null;
+        let assignSequenceOrder = 'asc';
 
         // CSV Upload handling
         const csvUploadBox = document.getElementById('csvUploadBox');
@@ -216,6 +268,8 @@
                     csvHeaders = results.meta.fields;
                     csvFileName.textContent = file.name;
                     csvPreview.classList.remove('hidden');
+
+                    populateAssignSeqColumnDropdown();
 
                     // Build preview table
                     renderCSVPreviewTable();
@@ -275,6 +329,47 @@
             quantityColumnName = columnName;
             checkReadyToProcess();
         };
+
+        function populateAssignSeqColumnDropdown() {
+            const select = document.getElementById('assignSeqColumn');
+            select.innerHTML = '<option value="">— select a column —</option>';
+            csvHeaders.forEach(header => {
+                const opt = document.createElement('option');
+                opt.value = header;
+                opt.textContent = header;
+                select.appendChild(opt);
+            });
+            // Reset previous custom selection when a new CSV is loaded
+            assignSequenceColumn = null;
+            select.value = '';
+            document.getElementById('assignSeqError').classList.add('hidden');
+        }
+
+        document.getElementById('seqLargestFirst').addEventListener('change', () => {
+            assignSequenceMode = 'largest-first';
+            assignSequenceColumn = null;
+            document.getElementById('customSeqOptions').classList.add('hidden');
+            document.getElementById('assignSeqError').classList.add('hidden');
+            checkReadyToProcess();
+        });
+
+        document.getElementById('seqCustom').addEventListener('change', () => {
+            assignSequenceMode = 'custom';
+            document.getElementById('customSeqOptions').classList.remove('hidden');
+            checkReadyToProcess();
+        });
+
+        document.getElementById('assignSeqColumn').addEventListener('change', (e) => {
+            assignSequenceColumn = e.target.value || null;
+            document.getElementById('assignSeqError').classList.add('hidden');
+            checkReadyToProcess();
+        });
+
+        document.querySelectorAll('input[name="assignSeqOrder"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                assignSequenceOrder = e.target.value;
+            });
+        });
 
         // JSON Mode Handling
         const modePaste = document.getElementById('modePaste');
@@ -618,11 +713,9 @@
 
         function checkReadyToProcess() {
             const processBtn = document.getElementById('processBtn');
-            if (csvData && quantityColumnName && seatingPlanData) {
-                processBtn.disabled = false;
-            } else {
-                processBtn.disabled = true;
-            }
+            const seqReady = assignSequenceMode === 'largest-first' ||
+                (assignSequenceMode === 'custom' && assignSequenceColumn);
+            processBtn.disabled = !(csvData && quantityColumnName && seatingPlanData && seqReady);
         }
 
         // Seat parsing function
@@ -671,8 +764,31 @@
                 assignedSeats: null
             }));
 
-            // Sort by quantity descending
-            orders.sort((a, b) => b.quantity - a.quantity);
+            // Sort by assign sequence
+            if (assignSequenceMode === 'custom' && assignSequenceColumn) {
+                const invalidRow = orders.find(o => {
+                    const raw = String(o.originalData[assignSequenceColumn] ?? '').trim();
+                    if (raw === '') return false;
+                    return isNaN(parseFloat(raw)) || !isFinite(raw);
+                });
+                if (invalidRow) {
+                    const badVal = invalidRow.originalData[assignSequenceColumn];
+                    const errEl = document.getElementById('assignSeqError');
+                    document.getElementById('assignSeqErrorMsg').textContent =
+                        `Column "${assignSequenceColumn}" contains a non-numeric value: "${badVal}". Please choose a numeric column.`;
+                    errEl.classList.remove('hidden');
+                    return;
+                }
+                document.getElementById('assignSeqError').classList.add('hidden');
+                orders.sort((a, b) => {
+                    const aVal = parseFloat(String(a.originalData[assignSequenceColumn] ?? '').trim()) || 0;
+                    const bVal = parseFloat(String(b.originalData[assignSequenceColumn] ?? '').trim()) || 0;
+                    if (aVal !== bVal) return assignSequenceOrder === 'desc' ? bVal - aVal : aVal - bVal;
+                    return b.quantity - a.quantity; // tiebreaker: largest order first
+                });
+            } else {
+                orders.sort((a, b) => b.quantity - a.quantity);
+            }
 
             // Assign seats
             let totalAssigned = 0;
