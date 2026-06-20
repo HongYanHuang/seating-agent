@@ -795,57 +795,52 @@
             let totalUnassigned = 0;
             const unassignedOrders = [];
 
-            orders.forEach(order => {
-                if (order.quantity === 0) return;
-
-                let assigned = false;
-
-                // Try each row
+            // Try to assign `order` scanning all groups. When enforceOrphan is true,
+            // skips positions that would leave exactly 1 seat remaining.
+            function tryAssignOrder(order, enforceOrphan) {
                 for (let rowIndex = 0; rowIndex < availableSeats.length; rowIndex++) {
                     const row = availableSeats[rowIndex];
-
-                    // Find consecutive available seats
                     for (let startPos = 0; startPos <= row.available.length - order.quantity; startPos++) {
-                        // Check if we have enough consecutive seats
                         let consecutive = true;
                         for (let i = 0; i < order.quantity; i++) {
-                            if (!row.available[startPos + i]) {
-                                consecutive = false;
-                                break;
-                            }
+                            if (!row.available[startPos + i]) { consecutive = false; break; }
                         }
-
                         if (!consecutive) continue;
 
-                        // Count remaining available seats in this row after assignment
-                        let remainingInRow = 0;
-                        for (let i = 0; i < row.available.length; i++) {
-                            if (i >= startPos && i < startPos + order.quantity) continue;
-                            if (row.available[i]) remainingInRow++;
+                        if (enforceOrphan) {
+                            let remainingInRow = 0;
+                            for (let i = 0; i < row.available.length; i++) {
+                                if (i >= startPos && i < startPos + order.quantity) continue;
+                                if (row.available[i]) remainingInRow++;
+                            }
+                            if (remainingInRow === 1) continue;
                         }
 
-                        // Check orphan rule: don't assign if it would leave exactly 1 seat
-                        if (remainingInRow === 1) {
-                            continue; // Skip this position
-                        }
-
-                        // Assign seats
                         const assignedSeats = [];
                         for (let i = 0; i < order.quantity; i++) {
                             assignedSeats.push(row.seats[startPos + i]);
                             row.available[startPos + i] = false;
                         }
-
-                        order.assignedSeats = assignedSeats;
-                        assigned = true;
-                        totalAssigned++;
-                        break;
+                        return assignedSeats;
                     }
-
-                    if (assigned) break;
                 }
+                return null;
+            }
 
-                if (!assigned) {
+            orders.forEach(order => {
+                if (order.quantity === 0) return;
+
+                // First pass: respect orphan prevention rule
+                let assignedSeats = tryAssignOrder(order, true);
+
+                // Fallback: if no valid spot found, retry without orphan prevention
+                // (leaving 1 orphan seat is better than leaving the order unserved)
+                if (!assignedSeats) assignedSeats = tryAssignOrder(order, false);
+
+                if (assignedSeats) {
+                    order.assignedSeats = assignedSeats;
+                    totalAssigned++;
+                } else {
                     totalUnassigned++;
                     unassignedOrders.push(order);
                 }
