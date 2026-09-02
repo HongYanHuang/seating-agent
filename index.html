@@ -753,22 +753,22 @@
 
         // Seat parsing function
         function parseSeat(seatString) {
-            const parts = seatString.split('---');
-            if (parts.length !== 2) return null;
+            // Parse right-to-left so zone/section values containing '-' don't break splitting.
+            // Format: ZONE-SECTION--ROW---SEAT
+            const seatSep = seatString.lastIndexOf('---');
+            if (seatSep === -1) return null;
+            const seat = seatString.slice(seatSep + 3);
+            const beforeSeat = seatString.slice(0, seatSep);
 
-            const seat = parts[1];
-            const remaining = parts[0];
+            const rowSep = beforeSeat.lastIndexOf('--');
+            if (rowSep === -1) return null;
+            const row = beforeSeat.slice(rowSep + 2);
+            const beforeRow = beforeSeat.slice(0, rowSep);
 
-            const rowParts = remaining.split('--');
-            if (rowParts.length !== 2) return null;
-
-            const row = rowParts[1];
-            const sectionParts = rowParts[0].split('-');
-
-            if (sectionParts.length !== 2) return null;
-
-            const zone = sectionParts[0];
-            const section = sectionParts[1];
+            const zoneSep = beforeRow.lastIndexOf('-');
+            if (zoneSep === -1) return null;
+            const section = beforeRow.slice(zoneSep + 1);
+            const zone = beforeRow.slice(0, zoneSep);
 
             return { zone, section, row, seat };
         }
